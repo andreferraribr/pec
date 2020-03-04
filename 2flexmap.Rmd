@@ -1,0 +1,542 @@
+---
+title: "PEC pacto federativo 2"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+runtime : shiny    
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(dplyr)
+library(httr)
+library(tidyverse)
+library(readxl)
+library(DT)
+library(plotly)
+library(leaflet)
+library(brazilmaps)
+library(shinyWidgets)
+library(shiny)
+library(sf)
+library(vroom)
+library(spdplyr)
+
+```
+
+```{r, ggcharts}
+#if (!"remotes" %in% installed.packages()) {
+#  install.packages("remotes")
+#}
+# remotes::install_github("thomas-neitmann/ggcharts")
+library(ggcharts)
+```
+
+
+```{r dados global, include=FALSE}
+# load data in 'global' chunk so it can be shared by all users of the dashboard
+# acessar dados das camaras municipais
+# arquivo elaborado a partir de https://github.com/andreferraribr/siconfi_api
+camaras <- vroom::vroom("camaras.csv")%>%
+# criar variável filtro para obter a microregion a partir do nome do município 
+    mutate (filtro = paste0(ente_uf,"-", MicroRegion))
+# baixar o mapa com dados das cidades
+    map_cidades <- get_brmap(geo = "City")%>%select(-MicroRegion)
+# obter as coordenadas das cidades a partir da média dos polygons (deve ter um jeito mais fácil...)
+    latlng<-as.data.frame(st_coordinates(map_cidades))
+    latlng<-latlng%>%group_by(L3)%>%summarise(lat = mean (Y), lng = mean (X) )
+# incluir as coordenadas no map_cidades    
+    map_cidades<- bind_cols(map_cidades,latlng[,2:3])
+# incluir as coordenadas de "camaras" no map_cidades    
+    map_cidades<- merge(map_cidades, camaras, by.x = "City", by.y= "cod_ibge")%>% arrange((uf))
+    
+    df_map_cidades<- as.data.frame(map_cidades)
+    df_map_cidades<- df_map_cidades[,1:21]
+```
+
+
+
+
+
+Brasil
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+```{r, inputs e reactive BR}
+#https://rdrr.io/cran/shinyWidgets/man/wNumbFormat.html
+
+# slider para linha de corte_br
+   noUiSliderInput(
+    inputId = "corte_br",
+    label = "extinguir municípios com população menor que:",
+    min = 1000, max = 10000,
+    value = 5000,
+    step = 1000,
+    format = wNumbFormat(thousand = "."))
+
+# map_mutate
+  map_br <- reactive({ map_cidades%>% mutate (corte_br = if_else(populacao >  input$corte_br , "ok", "mescla"))})
+  
+# gauge_br 
+  gauge_br<- reactive({as.data.frame(map_br()%>% filter (populacao <=  input$corte_br)%>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(valor, na.rm = TRUE)))})
+
+
+  
+  
+
+```
+
+Row 
+-----------------------------------------------------------------------
+### Quantidade de Municípios {.no-mobile}
+
+```{r, gauge_br quantidade}
+renderGauge({
+gauge(gauge_br()$quantidade, min = 0, max = nrow(map_br()),
+     gaugeSectors(color = "steelblue"))
+})
+```
+
+### População {.no-mobile}
+
+```{r,gauge_br populacao}
+renderGauge({
+gauge(gauge_br()$pop, min = 0, max = sum(map_br()$populacao),
+     gaugeSectors(color = "steelblue"))
+})
+```
+
+
+### Economia {.no-mobile}
+
+```{r, gauge_br economia}
+renderGauge({
+gauge(gauge_br()$gasto, min = 0, max = sum(map_br()$valor, na.rm = TRUE),
+      gaugeSectors(color = "steelblue"))
+})
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+
+### Cluster
+
+```{r, cluste BR}
+
+   leafletOutput("clueste_br")
+    output$clueste_br <- renderLeaflet({
+      
+             clueste_br<- leaflet() %>%
+                addTiles() %>%
+                addMarkers(data = map_br()%>%filter(corte_br == "mescla"),
+                lng = ~ lng, lat = ~ lat,
+                clusterOptions = markerClusterOptions())
+        
+     (clueste_br)
+    })
+    
+```
+
+
+
+### Mapa Brasil {.no-mobile}
+
+```{r, mapa BR}
+ 
+   leafletOutput("mapa_br")
+   
+    output$mapa_br <- renderLeaflet({
+    
+        mapa_br<- leaflet()%>%
+            addTiles(group = "OSM (default)") %>% 
+            addPolygons(
+                data = map_br()%>%filter(corte_br == "mescla"),
+                fill = T, weight = 0.5, color = "red", group = "Municípios",
+                label = ~paste0(nome,": ", valor/1000000) )
+        
+        (mapa_br)
+    })
+```
+
+
+
+Estados
+=====================================     
+
+Inputs {.sidebar}
+-------------------------------------
+```{r, input e reactive UF}
+
+# slider para linha de corte_uf
+   noUiSliderInput(
+    inputId = "corte_uf",
+    label = "extinguir municípios com população menor que:",
+    min = 1000, max = 10000,
+    value = 5000,
+    step = 1000,
+    format = wNumbFormat(thousand = "."))
+
+selectInput("uf", label = h3("escolha o Estado:"), 
+    choices = unique(map_cidades$uf), 
+    selected = "SC")
+
+  map_uf <- reactive({ map_cidades%>% filter (uf == input$uf) %>% mutate (corte = if_else(populacao >  input$corte_uf , "ok", "mescla"))})
+ 
+   gauge_uf<- reactive( {as.data.frame(map_uf()%>% filter (populacao <=  input$corte_uf)%>% group_by (uf) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(valor, na.rm = TRUE)))})
+
+   no_zeros<- reactive({camaras %>% group_by(uf)%>% summarise(quant = 0)})
+      
+   gauge_uf_zeros <- reactive({ left_join(gauge_uf(), no_zeros(), by = "uf")%>% mutate (populacao = pop + quant, economia = gasto + quant) })
+   
+
+map_pop_uf<-reactive ({map_cidades %>% filter (populacao < input$corte_uf )%>% group_by(uf)%>%summarise(populacao = sum (populacao))%>%arrange(populacao)})      
+
+
+    
+```
+
+Row 
+-----------------------------------------------------------------------
+
+### UFs não aferadas {.no-mobile}
+
+```{r, gauge_uf quantidadezzz}
+textOutput("afetados")
+
+output$afetados<-renderText({
+"Não serão afetados o Acre, Amapá, Distrito Federal, Rio de Janeio e Roraima."
+})
+```
+
+### Quantidade de Municípios {.no-mobile}
+
+```{r, gauge_uf quantidade}
+renderGauge({
+gauge(nrow(map_uf()%>%filter(corte == "mescla")), min = 0, max = nrow(map_uf()),
+     gaugeSectors(color = "steelblue"))
+})
+```
+
+### População
+
+```{r, gauge_uf populacao}
+renderGauge({
+gauge(gauge_uf()$pop, min = 0, max = sum(map_uf()$populacao),
+     gaugeSectors(color = "steelblue"))
+})
+```
+
+### Economia {.no-mobile}
+
+```{r, gauge_uf economia}
+renderGauge({
+
+
+gauge(gauge_uf()$gasto, min = 0, max = sum(map_uf()$valor, na.rm = TRUE),
+     gaugeSectors(color = "steelblue"))
+})
+```
+
+
+
+Column
+-----------------------------------------------------------------------
+
+### Mapa UF
+    
+```{r, mapa_uf}
+leafletOutput("mapa_uf")
+   
+    output$mapa_uf <- renderLeaflet({
+      
+       mapa_uf<- leaflet()%>%
+            addTiles(group = "OSM (default)") %>% 
+            addPolygons(
+                data = map_uf()%>%filter(corte == "mescla"),
+                fill = T, weight = 0.5, color = "red", group = "Municípios",
+                label = ~paste0(nome,": ", valor/1000000) )
+       
+        
+        (mapa_uf)
+       
+   
+    })
+
+```
+
+
+### Ranking quantidade de municípios
+    
+```{r, plot rank quantidade}
+renderPlotly({
+
+        
+value <- camaras %>%
+        group_by(uf)%>%
+        filter (populacao <=  input$corte_uf) %>% 
+        summarise(quantidade = n())
+
+no_value<- camaras %>%
+        group_by(uf)%>%
+        summarise(quant = 0)
+        
+
+value<- left_join(no_value, value, by = c("uf"))%>% mutate (quant2 = quantidade + quant)%>%
+  lollipop_chart(uf, quantidade, highlight = input$uf )
+  
+ax <- list(
+  title = "",
+  zeroline = FALSE,
+  showline = FALSE,
+  showticklabels = FALSE,
+  showgrid = FALSE
+)
+
+ggplotly(value)%>% layout(xaxis = ax, yaxis = list(title = "",  zeroline = FALSE))    
+    
+})
+
+
+```
+
+
+### Ranking população
+
+
+
+```{r, plot rank populacao}
+renderPlotly({
+value <- camaras %>%
+        group_by(uf)%>%
+        filter (populacao <=  input$corte_uf) %>% 
+        summarise(populacao = sum(populacao))
+
+no_value<- camaras %>%
+        group_by(uf)%>%
+        summarise(quant = 0)
+        
+
+value<- left_join(no_value, value, by = c("uf"))%>% mutate (populacao = populacao + quant)%>%
+  lollipop_chart(uf, populacao, highlight = input$uf )
+
+ax <- list(
+  title = "",
+  zeroline = FALSE,
+  showline = FALSE,
+  showticklabels = FALSE,
+  showgrid = FALSE
+)
+
+ggplotly(value)%>% layout(xaxis = ax, yaxis = list(title = "",  zeroline = FALSE))
+
+})
+```
+
+    
+```{r eval=FALSE, include=FALSE}
+#https://www.r-graph-gallery.com/lollipop-plot.html
+
+# shorturl.at/xGOSU The Zero Bug
+
+renderPlotly({
+    
+
+    
+
+
+teste<- ggplot(gauge_uf_zeros(), aes(x=uf, y=pop)) +
+  geom_segment( aes(x=uf, xend=uf, y=0, yend=pop), color=ifelse(gauge_uf_zeros()$uf == input$uf, "orange","skyblue")) +
+  geom_point( color=ifelse(gauge_uf_zeros()$uf == input$uf, "orange", "grey"), size=4, alpha=0.6) +
+  theme_light() +
+  coord_flip()
+(teste)   
+    
+})
+
+```
+
+
+
+### Ranking economia
+    
+```{r, rank plot economia}
+
+renderPlotly({
+    
+value <- camaras %>%
+        group_by(uf)%>%
+        filter (populacao <=  input$corte_uf) %>% 
+        summarise(gasto = sum (valor, na.rm = TRUE))
+
+no_value<- camaras %>%
+        group_by(uf)%>%
+        summarise(gas = 0)
+
+value<- left_join(no_value, value, by = c("uf"))%>% mutate (gasto2 = gasto + gas)%>%
+  lollipop_chart(uf, gasto, highlight = input$uf )
+
+ax <- list(
+  title = "",
+  zeroline = FALSE,
+  showline = FALSE,
+  showticklabels = FALSE,
+  showgrid = FALSE
+)
+
+ggplotly(value)%>% layout(xaxis = ax, yaxis = list(title = "",  zeroline = FALSE))
+  
+
+    
+})
+
+```
+
+
+
+
+
+
+
+Municípios
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
+```{r, input e reactive municipio}
+
+selectInput("filtro", label = "Município-UF:", 
+                        choices = camaras$filtro, 
+                        selected = "Florianópolis-SC-42016")
+
+
+
+ micro<- reactive({as.numeric(str_sub((input$filtro),-5))})
+ 
+ 
+   map_muni <- reactive({ map_cidades%>% filter (MicroRegion == micro()) })
+ 
+   gauge_muni<- reactive( {as.data.frame(map_muni()%>% filter (MicroRegion == micro())%>% group_by (MicroRegion) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(valor, na.rm = TRUE)))})
+
+   
+map_pop_muni<-reactive ({map_cidades %>% filter (MicroRegion == micro() )%>% group_by(MicroRegion)%>%summarise(populacao = sum (populacao))%>%arrange(populacao)})      
+
+
+    
+    
+```
+
+
+
+
+
+Column
+-----------------------------------------------------------------------
+
+### Mapa Muni
+    
+```{r, mapa municipio}
+leafletOutput("map_muni")
+   
+    output$map_muni <- renderLeaflet({
+      
+   
+
+icons <-awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = "red"
+)
+      
+       map_muni<- leaflet()%>%
+            addTiles(group = "OSM (default)") %>% 
+            addPolygons(
+                data = map_muni()%>%filter(MicroRegion == micro(),populacao<5000),
+                fill = T, weight = 2, color = "red", group = "municípios afetados (vermelho)",
+                label = ~paste0(nome,": ", valor/1000000) ) %>% 
+            addPolygons(
+                data = map_muni()%>%filter(MicroRegion == micro(), populacao>5000),
+                fill = T, weight = 2, color = "blue", group = "demais municípios (azul)",
+                label = ~paste0(nome,": ", valor/1000000) ) %>% 
+         # addMarkers(data = map_muni()%>%filter(populacao<5000),lng = ~lng, lat = ~lat, group = "municípios afetados", icon = icons) %>% 
+        #  addMarkers(data = map_muni(),lng = ~lng, lat = ~lat, group = "todos municípios") %>% 
+         addLayersControl(
+    overlayGroups = c("municípios afetados (vermelho)", "demais municípios (azul)"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+       
+        
+        (map_muni)
+       
+   
+    })
+
+```
+
+### Dados
+    
+```{r, tabela municipio}
+DTOutput("tabela4")
+   
+ output$tabela4 <- renderDT({
+      
+     tabela<- as.data.frame(map_muni()%>% select (ente, populacao, valor))
+
+      
+      datatable(tabela[,1:3]) })
+
+```
+
+
+
+Dados
+=====================================  
+
+
+Column 
+-----------------------------------------------------------------------
+### População
+    
+```{r, tabela dados}
+
+#https://github.com/rstudio/DT/issues/267
+# https://github.com/cenuno
+
+DTOutput("tabela2")
+   
+ output$tabela2 <- renderDT({
+      
+      
+
+      
+      datatable(as.data.frame(camaras%>% select (ente, uf, populacao, valor)),
+      extensions = 'Buttons'
+                , options = list( 
+                  dom = "Blfrtip"
+                  , buttons = 
+                    list("copy", list(
+                      extend = "collection"
+                      , buttons = c("csv", "excel", "pdf")
+                      , text = "Download"
+                    ) ) # end of buttons customization
+                   
+                   # customize the length menu
+                  , lengthMenu = list( c(-1, 20, 50) # declare values
+                                       , c( "tudo",20, 50) # declare titles
+                  ) # end of lengthMenu customization
+                  , pageLength = 10
+                   
+                   
+                ) # end of options
+               
+     ) # end of datatables
+   
+   })
+
+```
+
+
