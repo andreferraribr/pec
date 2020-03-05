@@ -1,3 +1,4 @@
+
 ---
 title: "PEC pacto federativo 2"
 output: 
@@ -38,9 +39,15 @@ library(ggcharts)
 # load data in 'global' chunk so it can be shared by all users of the dashboard
 # acessar dados das camaras municipais
 # arquivo elaborado a partir de https://github.com/andreferraribr/siconfi_api
-camaras <- vroom::vroom("camaras.csv")%>%
+camaras <- vroom::vroom("camaras2.csv")%>%
 # criar variável filtro para obter a microregion a partir do nome do município 
-    mutate (filtro = paste0(ente_uf,"-", MicroRegion))
+    mutate (filtro = paste0(ente_uf,"-", MicroRegion))%>%select(cod_ibge, ente, uf, populacao, ente_uf, cores, MicroRegion, filtro, valor)
+
+
+gastos<-read_csv("gastos.csv")%>%select(-populacao, -uf )
+camaras<- left_join(camaras, gastos, by = "cod_ibge" ) 
+
+
 # baixar o mapa com dados das cidades
     map_cidades <- get_brmap(geo = "City")%>%select(-MicroRegion)
 # obter as coordenadas das cidades a partir da média dos polygons (deve ter um jeito mais fácil...)
@@ -52,9 +59,8 @@ camaras <- vroom::vroom("camaras.csv")%>%
     map_cidades<- merge(map_cidades, camaras, by.x = "City", by.y= "cod_ibge")%>% arrange((uf))
     
     df_map_cidades<- as.data.frame(map_cidades)
-    df_map_cidades<- df_map_cidades[,1:21]
+    df_map_cidades<- df_map_cidades[,1:19]
 ```
-
 
 
 
@@ -80,7 +86,7 @@ Inputs {.sidebar}
   map_br <- reactive({ map_cidades%>% mutate (corte_br = if_else(populacao >  input$corte_br , "ok", "mescla"))})
   
 # gauge_br 
-  gauge_br<- reactive({as.data.frame(map_br()%>% filter (populacao <=  input$corte_br)%>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(valor, na.rm = TRUE)))})
+  gauge_br<- reactive({as.data.frame(map_br()%>% filter (populacao <=  input$corte_br)%>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(adm+legis, na.rm = TRUE)))})
 
 
   
@@ -90,7 +96,7 @@ Inputs {.sidebar}
 
 Row 
 -----------------------------------------------------------------------
-### Quantidade de Municípios {.no-mobile}
+### Municípios afetados {.no-mobile}
 
 ```{r, gauge_br quantidade}
 renderGauge({
@@ -99,7 +105,7 @@ gauge(gauge_br()$quantidade, min = 0, max = nrow(map_br()),
 })
 ```
 
-### População {.no-mobile}
+### População afetada {.no-mobile}
 
 ```{r,gauge_br populacao}
 renderGauge({
@@ -109,11 +115,11 @@ gauge(gauge_br()$pop, min = 0, max = sum(map_br()$populacao),
 ```
 
 
-### Economia {.no-mobile}
+### Economia estimada {.no-mobile}
 
-```{r, gauge_br economia}
+```{r, gauge_br Economia estimada}
 renderGauge({
-gauge(gauge_br()$gasto, min = 0, max = sum(map_br()$valor, na.rm = TRUE),
+gauge(gauge_br()$gasto, min = 0, max = sum(map_br()$total, na.rm = TRUE),
       gaugeSectors(color = "steelblue"))
 })
 ```
@@ -156,7 +162,7 @@ Row
             addPolygons(
                 data = map_br()%>%filter(corte_br == "mescla"),
                 fill = T, weight = 0.5, color = "red", group = "Municípios",
-                label = ~paste0(nome,": ", valor/1000000) )
+                label = ~paste0(nome,": ", populacao) )
         
         (mapa_br)
     })
@@ -186,17 +192,10 @@ selectInput("uf", label = h3("escolha o Estado:"),
 
   map_uf <- reactive({ map_cidades%>% filter (uf == input$uf) %>% mutate (corte = if_else(populacao >  input$corte_uf , "ok", "mescla"))})
  
-   gauge_uf<- reactive( {as.data.frame(map_uf()%>% filter (populacao <=  input$corte_uf)%>% group_by (uf) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(valor, na.rm = TRUE)))})
-
-   no_zeros<- reactive({camaras %>% group_by(uf)%>% summarise(quant = 0)})
-      
-   gauge_uf_zeros <- reactive({ left_join(gauge_uf(), no_zeros(), by = "uf")%>% mutate (populacao = pop + quant, economia = gasto + quant) })
-   
-
-map_pop_uf<-reactive ({map_cidades %>% filter (populacao < input$corte_uf )%>% group_by(uf)%>%summarise(populacao = sum (populacao))%>%arrange(populacao)})      
+   gauge_uf<- reactive( {as.data.frame(map_uf()%>% filter (populacao <=  input$corte_uf)%>% group_by (uf) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(adm+legis, na.rm = TRUE)))})
 
 
-    
+
 ```
 
 Row 
@@ -208,11 +207,11 @@ Row
 textOutput("afetados")
 
 output$afetados<-renderText({
-"Não serão afetados o Acre, Amapá, Distrito Federal, Rio de Janeio e Roraima."
+"Não serão afetados o Acre, Amapá, Distrito Federal, Rio de Janeiro e Roraima."
 })
 ```
 
-### Quantidade de Municípios {.no-mobile}
+### Municípios afetados {.no-mobile}
 
 ```{r, gauge_uf quantidade}
 renderGauge({
@@ -221,7 +220,7 @@ gauge(nrow(map_uf()%>%filter(corte == "mescla")), min = 0, max = nrow(map_uf()),
 })
 ```
 
-### População
+### População afetada
 
 ```{r, gauge_uf populacao}
 renderGauge({
@@ -230,13 +229,13 @@ gauge(gauge_uf()$pop, min = 0, max = sum(map_uf()$populacao),
 })
 ```
 
-### Economia {.no-mobile}
+### Economia estimada  {.no-mobile}
 
-```{r, gauge_uf economia}
+```{r, gauge_uf Economia estimada}
 renderGauge({
 
 
-gauge(gauge_uf()$gasto, min = 0, max = sum(map_uf()$valor, na.rm = TRUE),
+gauge(gauge_uf()$gasto, min = 0, max = sum(map_uf()$total, na.rm = TRUE),
      gaugeSectors(color = "steelblue"))
 })
 ```
@@ -258,7 +257,7 @@ leafletOutput("mapa_uf")
             addPolygons(
                 data = map_uf()%>%filter(corte == "mescla"),
                 fill = T, weight = 0.5, color = "red", group = "Municípios",
-                label = ~paste0(nome,": ", valor/1000000) )
+                label = ~paste0(nome,": ", populacao) )
        
         
         (mapa_uf)
@@ -269,7 +268,7 @@ leafletOutput("mapa_uf")
 ```
 
 
-### Ranking quantidade de municípios
+### Ranking municípios afetados
     
 ```{r, plot rank quantidade}
 renderPlotly({
@@ -304,7 +303,7 @@ ggplotly(value)%>% layout(xaxis = ax, yaxis = list(title = "",  zeroline = FALSE
 ```
 
 
-### Ranking população
+### Ranking população afetada
 
 
 
@@ -336,41 +335,19 @@ ggplotly(value)%>% layout(xaxis = ax, yaxis = list(title = "",  zeroline = FALSE
 })
 ```
 
+  
+
+
+### Ranking economia estimada
     
-```{r eval=FALSE, include=FALSE}
-#https://www.r-graph-gallery.com/lollipop-plot.html
-
-# shorturl.at/xGOSU The Zero Bug
-
-renderPlotly({
-    
-
-    
-
-
-teste<- ggplot(gauge_uf_zeros(), aes(x=uf, y=pop)) +
-  geom_segment( aes(x=uf, xend=uf, y=0, yend=pop), color=ifelse(gauge_uf_zeros()$uf == input$uf, "orange","skyblue")) +
-  geom_point( color=ifelse(gauge_uf_zeros()$uf == input$uf, "orange", "grey"), size=4, alpha=0.6) +
-  theme_light() +
-  coord_flip()
-(teste)   
-    
-})
-
-```
-
-
-
-### Ranking economia
-    
-```{r, rank plot economia}
+```{r, rank plot Economia estimada}
 
 renderPlotly({
     
 value <- camaras %>%
         group_by(uf)%>%
         filter (populacao <=  input$corte_uf) %>% 
-        summarise(gasto = sum (valor, na.rm = TRUE))
+        summarise(gasto = sum (adm+legis, na.rm = TRUE))
 
 no_value<- camaras %>%
         group_by(uf)%>%
@@ -419,7 +396,7 @@ selectInput("filtro", label = "Município-UF:",
  
    map_muni <- reactive({ map_cidades%>% filter (MicroRegion == micro()) })
  
-   gauge_muni<- reactive( {as.data.frame(map_muni()%>% filter (MicroRegion == micro())%>% group_by (MicroRegion) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(valor, na.rm = TRUE)))})
+   gauge_muni<- reactive( {as.data.frame(map_muni()%>% filter (MicroRegion == micro())%>% group_by (MicroRegion) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(adm+legis, na.rm = TRUE)))})
 
    
 map_pop_muni<-reactive ({map_cidades %>% filter (MicroRegion == micro() )%>% group_by(MicroRegion)%>%summarise(populacao = sum (populacao))%>%arrange(populacao)})      
@@ -436,7 +413,7 @@ map_pop_muni<-reactive ({map_cidades %>% filter (MicroRegion == micro() )%>% gro
 Column
 -----------------------------------------------------------------------
 
-### Mapa Muni
+### Mapa Microrregião
     
 ```{r, mapa municipio}
 leafletOutput("map_muni")
@@ -457,11 +434,11 @@ icons <-awesomeIcons(
             addPolygons(
                 data = map_muni()%>%filter(MicroRegion == micro(),populacao<5000),
                 fill = T, weight = 2, color = "red", group = "municípios afetados (vermelho)",
-                label = ~paste0(nome,": ", valor/1000000) ) %>% 
+                label = ~paste0(nome,": ", populacao) ) %>% 
             addPolygons(
                 data = map_muni()%>%filter(MicroRegion == micro(), populacao>5000),
                 fill = T, weight = 2, color = "blue", group = "demais municípios (azul)",
-                label = ~paste0(nome,": ", valor/1000000) ) %>% 
+                label = ~paste0(nome,": ", populacao) ) %>% 
          # addMarkers(data = map_muni()%>%filter(populacao<5000),lng = ~lng, lat = ~lat, group = "municípios afetados", icon = icons) %>% 
         #  addMarkers(data = map_muni(),lng = ~lng, lat = ~lat, group = "todos municípios") %>% 
          addLayersControl(
@@ -484,10 +461,31 @@ DTOutput("tabela4")
    
  output$tabela4 <- renderDT({
       
-     tabela<- as.data.frame(map_muni()%>% select (ente, populacao, valor))
+     tabela<- as.data.frame(map_muni()%>% select (ente, populacao, total))
 
       
-      datatable(tabela[,1:3]) })
+      datatable((tabela[,1:3]),
+      extensions = 'Buttons',
+      options = list( 
+                  dom = "Blfrtip"
+                  , buttons = 
+                    list("copy", list(
+                      extend = "collection"
+                      , buttons = c("csv", "excel", "pdf")
+                      , text = "Download"
+                    ) ) # end of buttons customization
+                   
+                   # customize the length menu
+                  , lengthMenu = list( c(-1, 20, 50) # declare values
+                                       , c( "tudo",20, 50) # declare titles
+                  ) # end of lengthMenu customization
+                  , pageLength = 10
+                   
+                   
+                ) # end of options
+               
+     ) # end of datatables
+ })
 
 ```
 
@@ -499,7 +497,7 @@ Dados
 
 Column 
 -----------------------------------------------------------------------
-### População
+### Dados
     
 ```{r, tabela dados}
 
@@ -513,7 +511,7 @@ DTOutput("tabela2")
       
 
       
-      datatable(as.data.frame(camaras%>% select (ente, uf, populacao, valor)),
+      datatable(as.data.frame(camaras%>% select (ente, uf, populacao, total)),
       extensions = 'Buttons'
                 , options = list( 
                   dom = "Blfrtip"
@@ -538,5 +536,4 @@ DTOutput("tabela2")
    })
 
 ```
-
 
