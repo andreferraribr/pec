@@ -82,11 +82,42 @@ Inputs {.sidebar}
     step = 1000,
     format = wNumbFormat(thousand = "."))
 
+
+# slider ecomomia despesa legislativa
+   noUiSliderInput(
+    inputId = "legis_br",
+    label = "% de economia com a redução da despesa legislativa:",
+    min = 0, max = 100,
+    value = 95,
+    step = 5,
+    format = wNumbFormat(thousand = "."))
+   
+# slider ecomomia despesa administrativa
+   noUiSliderInput(
+    inputId = "adm_br",
+    label = "% de economia com a redução da despesa administrativa:",
+    min = 0, max = 100,
+    value = 70,
+    step = 5,
+    format = wNumbFormat(thousand = "."))   
+ 
+   # slider ecomomia demais despesas
+  noUiSliderInput(
+    inputId = "demais_br",
+    label = "% de economia com a redução das demias despesas:",
+    min = 0, max = 100,
+    value = 15,
+    step = 5,
+    format = wNumbFormat(thousand = "."))   
+   
+
+  
+  
 # map_mutate
   map_br <- reactive({ map_cidades%>% mutate (corte_br = if_else(populacao >  input$corte_br , "ok", "mescla"))})
   
 # gauge_br 
-  gauge_br<- reactive({as.data.frame(map_br()%>% filter (populacao <=  input$corte_br)%>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(adm+legis, na.rm = TRUE)))})
+  gauge_br<- reactive({as.data.frame(map_br()%>% filter (populacao <=  input$corte_br)%>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum((adm*input$adm_br/100)+(legis*input$legis_br/100)+(demais*input$demais_br/100), na.rm = TRUE)))})
 
 
   
@@ -177,6 +208,10 @@ Inputs {.sidebar}
 -------------------------------------
 ```{r, input e reactive UF}
 
+selectInput("uf", label = h3("escolha o Estado:"), 
+    choices = unique(map_cidades$uf), 
+    selected = "SC")
+
 # slider para linha de corte_uf
    noUiSliderInput(
     inputId = "corte_uf",
@@ -186,13 +221,39 @@ Inputs {.sidebar}
     step = 1000,
     format = wNumbFormat(thousand = "."))
 
-selectInput("uf", label = h3("escolha o Estado:"), 
-    choices = unique(map_cidades$uf), 
-    selected = "SC")
+# slider ecomomia despesa legislativa
+   noUiSliderInput(
+    inputId = "legis_uf",
+    label = "% de economia com a redução da despesa legislativa:",
+    min = 0, max = 100,
+    value = 95,
+    step = 5,
+    format = wNumbFormat(thousand = "."))
+   
+# slider ecomomia despesa administrativa
+   noUiSliderInput(
+    inputId = "adm_uf",
+    label = "% de economia com a redução da despesa administrativa:",
+    min = 0, max = 100,
+    value = 70,
+    step = 5,
+    format = wNumbFormat(thousand = "."))   
+ 
+   # slider ecomomia demais despesas
+  noUiSliderInput(
+    inputId = "demais_uf",
+    label = "% de economia com a redução das demias despesas:",
+    min = 0, max = 100,
+    value = 15,
+    step = 5,
+    format = wNumbFormat(thousand = "."))   
+   
+
+
 
   map_uf <- reactive({ map_cidades%>% filter (uf == input$uf) %>% mutate (corte = if_else(populacao >  input$corte_uf , "ok", "mescla"))})
  
-   gauge_uf<- reactive( {as.data.frame(map_uf()%>% filter (populacao <=  input$corte_uf)%>% group_by (uf) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(adm+legis, na.rm = TRUE)))})
+   gauge_uf<- reactive( {as.data.frame(map_uf()%>% filter (populacao <=  input$corte_uf)%>% group_by (uf) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum((adm*input$adm_uf/100)+(legis*input$legis_uf/100)+(demais*input$demais_uf/100), na.rm = TRUE)))})
 
 
 
@@ -204,10 +265,10 @@ Row
 ### UFs não aferadas {.no-mobile}
 
 ```{r, gauge_uf quantidadezzz}
-textOutput("afetados")
+htmlOutput("afetados")
 
 output$afetados<-renderText({
-"Não serão afetados o Acre, Amapá, Distrito Federal, Rio de Janeiro e Roraima."
+"<font color=#ff0000><b>Não serão afetados o Acre, Amapá, Distrito Federal, Rio de Janeiro e Roraima.</b></font>"
 })
 ```
 
@@ -347,7 +408,7 @@ renderPlotly({
 value <- camaras %>%
         group_by(uf)%>%
         filter (populacao <=  input$corte_uf) %>% 
-        summarise(gasto = sum (adm+legis, na.rm = TRUE))
+        summarise(gasto = sum((adm*input$adm_uf/100)+(legis*input$legis_uf/100)+(demais*input$demais_uf/100), na.rm = TRUE))
 
 no_value<- camaras %>%
         group_by(uf)%>%
@@ -355,7 +416,6 @@ no_value<- camaras %>%
 
 value<- left_join(no_value, value, by = c("uf"))%>% mutate (gasto2 = gasto + gas)%>%
   lollipop_chart(uf, gasto, highlight = input$uf )
-
 ax <- list(
   title = "",
   zeroline = FALSE,
@@ -484,7 +544,17 @@ DTOutput("tabela4")
                    
                 ) # end of options
                
-     ) # end of datatables
+     )%>% formatCurrency("total", 
+                          "R$",
+                          mark = ".",
+                          dec.mark = ",") %>% 
+     formatRound(
+  "populacao",
+  digits = 0,
+  interval = 3,
+  mark = ".",
+  dec.mark = ","
+) # end of datatables
  })
 
 ```
@@ -531,7 +601,17 @@ DTOutput("tabela2")
                    
                 ) # end of options
                
-     ) # end of datatables
+     ) %>% formatCurrency("total", 
+                          "R$",
+                          mark = ".",
+                          dec.mark = ",") %>% 
+     formatRound(
+  "populacao",
+  digits = 0,
+  interval = 3,
+  mark = ".",
+  dec.mark = ","
+)# end of datatables
    
    })
 
