@@ -4,6 +4,7 @@ title: "PEC do Pacto Federativo - Municípios "
 output: 
   flexdashboard::flex_dashboard:
     orientation: rows
+    source_code: https://github.com/andreferraribr/pec
     social: [ "twitter", "facebook", "menu" ]
 runtime : shiny    
 ---
@@ -25,6 +26,7 @@ library(sf)
 library(vroom)
 library(spdplyr)
 library("htmltools")
+# https://ijlyttle.github.io/vembedr/
 library("vembedr")
 
 ```
