@@ -1,9 +1,10 @@
 
 ---
-title: "PEC pacto federativo 2"
+title: "PEC do Pacto Federativo - Municípios "
 output: 
   flexdashboard::flex_dashboard:
     orientation: rows
+    social: [ "twitter", "facebook", "menu" ]
 runtime : shiny    
 ---
 
@@ -23,6 +24,8 @@ library(shiny)
 library(sf)
 library(vroom)
 library(spdplyr)
+library("htmltools")
+library("vembedr")
 
 ```
 
@@ -104,7 +107,7 @@ Inputs {.sidebar}
    # slider ecomomia demais despesas
   noUiSliderInput(
     inputId = "demais_br",
-    label = "% de economia com a redução das demias despesas:",
+    label = "% de economia com a redução das demais despesas:",
     min = 0, max = 100,
     value = 15,
     step = 5,
@@ -242,7 +245,7 @@ selectInput("uf", label = h3("escolha o Estado:"),
    # slider ecomomia demais despesas
   noUiSliderInput(
     inputId = "demais_uf",
-    label = "% de economia com a redução das demias despesas:",
+    label = "% de economia com a redução das demais despesas:",
     min = 0, max = 100,
     value = 15,
     step = 5,
@@ -408,14 +411,14 @@ renderPlotly({
 value <- camaras %>%
         group_by(uf)%>%
         filter (populacao <=  input$corte_uf) %>% 
-        summarise(gasto = sum((adm*input$adm_uf/100)+(legis*input$legis_uf/100)+(demais*input$demais_uf/100), na.rm = TRUE))
+        summarise(economia = sum((adm*input$adm_uf/100)+(legis*input$legis_uf/100)+(demais*input$demais_uf/100), na.rm = TRUE))
 
 no_value<- camaras %>%
         group_by(uf)%>%
-        summarise(gas = 0)
+        summarise(eco = 0)
 
-value<- left_join(no_value, value, by = c("uf"))%>% mutate (gasto2 = gasto + gas)%>%
-  lollipop_chart(uf, gasto, highlight = input$uf )
+value<- left_join(no_value, value, by = c("uf"))%>% mutate (eco2 = economia + eco)%>%
+  lollipop_chart(uf, economia, highlight = input$uf )
 ax <- list(
   title = "",
   zeroline = FALSE,
@@ -615,5 +618,13 @@ DTOutput("tabela2")
    
    })
 
+```
+
+Vídeo Explicativo
+=====================================
+
+
+```{r}
+embed_url("https://www.youtube.com/watch?v=uV4UpCq2azs")
 ```
 
