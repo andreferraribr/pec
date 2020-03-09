@@ -12,7 +12,6 @@ runtime : shiny
 ```{r setup, include=FALSE}
 library(flexdashboard)
 library(shiny)
-library(dplyr)
 library(httr)
 library(tidyverse)
 library(readxl)
@@ -25,9 +24,8 @@ library(shiny)
 library(sf)
 library(vroom)
 library(spdplyr)
-library("htmltools")
-# https://ijlyttle.github.io/vembedr/
-library("vembedr")
+library(htmltools)
+
 
 ```
 
@@ -44,12 +42,15 @@ library(ggcharts)
 # load data in 'global' chunk so it can be shared by all users of the dashboard
 # acessar dados das camaras municipais
 # arquivo elaborado a partir de https://github.com/andreferraribr/siconfi_api
+# dados das despesas das câmaras municipais
 camaras <- vroom::vroom("camaras2.csv")%>%
 # criar variável filtro para obter a microregion a partir do nome do município 
     mutate (filtro = paste0(ente_uf,"-", MicroRegion))%>%select(cod_ibge, ente, uf, populacao, ente_uf, cores, MicroRegion, filtro, valor)
 
-
+# carregar dados da dotaçao atualizada por função (RREO 4° bimestre 2019)
 gastos<-read_csv("gastos.csv")%>%select(-populacao, -uf )
+
+# juntar os dados das câmaras e dos entes
 camaras<- left_join(camaras, gastos, by = "cod_ibge" ) 
 
 
@@ -60,7 +61,7 @@ camaras<- left_join(camaras, gastos, by = "cod_ibge" )
     latlng<-latlng%>%group_by(L3)%>%summarise(lat = mean (Y), lng = mean (X) )
 # incluir as coordenadas no map_cidades    
     map_cidades<- bind_cols(map_cidades,latlng[,2:3])
-# incluir as coordenadas de "camaras" no map_cidades    
+# associar os dados orçamentários aos dados geográficos
     map_cidades<- merge(map_cidades, camaras, by.x = "City", by.y= "cod_ibge")%>% arrange((uf))
     
     df_map_cidades<- as.data.frame(map_cidades)
@@ -76,7 +77,10 @@ Brasil
 Inputs {.sidebar}
 -------------------------------------
 ```{r, inputs e reactive BR}
+# dica para formatação do slider
 #https://rdrr.io/cran/shinyWidgets/man/wNumbFormat.html
+
+# atenção, variáveis terminam com "br"
 
 # slider para linha de corte_br
    noUiSliderInput(
@@ -118,10 +122,10 @@ Inputs {.sidebar}
 
   
   
-# map_mutate
+# map_br é atualizado a cada mudança no input$corte_br (slider população)
   map_br <- reactive({ map_cidades%>% mutate (corte_br = if_else(populacao >  input$corte_br , "ok", "mescla"))})
   
-# gauge_br 
+# gauge_br é atualizado a cada mudança no input$corte_br (slider população) e nos inputs de despesa (input$adm_br, # input$legis_br,input$demais_br)
   gauge_br<- reactive({as.data.frame(map_br()%>% filter (populacao <=  input$corte_br)%>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum((adm*input$adm_br/100)+(legis*input$legis_br/100)+(demais*input$demais_br/100), na.rm = TRUE)))})
 
 
@@ -132,18 +136,24 @@ Inputs {.sidebar}
 
 Row 
 -----------------------------------------------------------------------
-### Municípios afetados {.no-mobile}
+### Municípios afetados 
 
 ```{r, gauge_br quantidade}
+
+# gauge é atualizado a cada alteração na reactive function map_br() e gauge_br()
+
 renderGauge({
 gauge(gauge_br()$quantidade, min = 0, max = nrow(map_br()),
      gaugeSectors(color = "steelblue"))
 })
 ```
 
-### População afetada {.no-mobile}
+### População afetada 
 
 ```{r,gauge_br populacao}
+
+# gauge é atualizado a cada alteração na reactive function map_br() e gauge_br()
+
 renderGauge({
 gauge(gauge_br()$pop, min = 0, max = sum(map_br()$populacao),
      gaugeSectors(color = "steelblue"))
@@ -151,9 +161,11 @@ gauge(gauge_br()$pop, min = 0, max = sum(map_br()$populacao),
 ```
 
 
-### Economia estimada {.no-mobile}
+### Economia anual estimada 
 
 ```{r, gauge_br Economia estimada}
+
+# gauge é atualizado a cada alteração na reactive function map_br() e gauge_br()
 renderGauge({
 gauge(gauge_br()$gasto, min = 0, max = sum(map_br()$total, na.rm = TRUE),
       gaugeSectors(color = "steelblue"))
@@ -167,28 +179,32 @@ Row
 
 ### Cluster
 
-```{r, cluste BR}
+```{r, cluster BR}
 
-   leafletOutput("clueste_br")
-    output$clueste_br <- renderLeaflet({
+# gráfico é atualizado a cada alteração na reactive function map_br()
+
+   leafletOutput("cluster_br")
+    output$cluster_br <- renderLeaflet({
       
-             clueste_br<- leaflet() %>%
+             cluster_br<- leaflet() %>%
                 addTiles() %>%
                 addMarkers(data = map_br()%>%filter(corte_br == "mescla"),
                 lng = ~ lng, lat = ~ lat,
                 clusterOptions = markerClusterOptions())
         
-     (clueste_br)
+     (cluster_br)
     })
     
 ```
 
 
 
-### Mapa Brasil {.no-mobile}
+### Mapa Brasil 
 
 ```{r, mapa BR}
  
+# gráfico é atualizado a cada alteração na reactive function map_br()
+
    leafletOutput("mapa_br")
    
     output$mapa_br <- renderLeaflet({
@@ -196,6 +212,7 @@ Row
         mapa_br<- leaflet()%>%
             addTiles(group = "OSM (default)") %>% 
             addPolygons(
+                # corte_br == "mescla" para filtrar municípios definidos pelo slider input$corte_br
                 data = map_br()%>%filter(corte_br == "mescla"),
                 fill = T, weight = 0.5, color = "red", group = "Municípios",
                 label = ~paste0(nome,": ", populacao) )
@@ -212,6 +229,8 @@ Estados
 Inputs {.sidebar}
 -------------------------------------
 ```{r, input e reactive UF}
+
+# atenção, variáveis terminam com "uf"
 
 selectInput("uf", label = h3("escolha o Estado:"), 
     choices = unique(map_cidades$uf), 
@@ -255,10 +274,19 @@ selectInput("uf", label = h3("escolha o Estado:"),
    
 
 
+# map_uf é atualizado a cada mudança no input$corte_uf (slider população)
+  map_uf <- reactive({ map_cidades%>% filter (uf == input$uf) %>% 
+                                      mutate (corte = if_else(populacao >  input$corte_uf , "ok", "mescla"))})
 
-  map_uf <- reactive({ map_cidades%>% filter (uf == input$uf) %>% mutate (corte = if_else(populacao >  input$corte_uf , "ok", "mescla"))})
- 
-   gauge_uf<- reactive( {as.data.frame(map_uf()%>% filter (populacao <=  input$corte_uf)%>% group_by (uf) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum((adm*input$adm_uf/100)+(legis*input$legis_uf/100)+(demais*input$demais_uf/100), na.rm = TRUE)))})
+# gauge_uf é atualizado a cada mudança no input$corte_br (slider população) e nos inputs de despesa (input$adm_uf, # input$legis_uf,input$demais_uf)  
+   
+gauge_uf<- reactive( {as.data.frame(map_uf()%>%
+                                    filter (populacao <=  input$corte_uf)%>% group_by (uf)%>%
+                                    summarise(pop = sum(populacao),
+                                              quantidade = n(), 
+                                              gasto = sum((adm*input$adm_uf/100)+
+                                                          (legis*input$legis_uf/100)+
+                                                          (demais*input$demais_uf/100), na.rm = TRUE)))})
 
 
 
@@ -267,7 +295,7 @@ selectInput("uf", label = h3("escolha o Estado:"),
 Row 
 -----------------------------------------------------------------------
 
-### UFs não aferadas {.no-mobile}
+### UFs não aferadas 
 
 ```{r, gauge_uf quantidadezzz}
 htmlOutput("afetados")
@@ -277,9 +305,11 @@ output$afetados<-renderText({
 })
 ```
 
-### Municípios afetados {.no-mobile}
+### Municípios afetados 
 
 ```{r, gauge_uf quantidade}
+# gauge é atualizado a cada alteração na reactive function map_uf() e gauge_uf()
+
 renderGauge({
 gauge(nrow(map_uf()%>%filter(corte == "mescla")), min = 0, max = nrow(map_uf()),
      gaugeSectors(color = "steelblue"))
@@ -289,17 +319,20 @@ gauge(nrow(map_uf()%>%filter(corte == "mescla")), min = 0, max = nrow(map_uf()),
 ### População afetada
 
 ```{r, gauge_uf populacao}
+
+# gauge é atualizado a cada alteração na reactive function gauge_uf()
 renderGauge({
 gauge(gauge_uf()$pop, min = 0, max = sum(map_uf()$populacao),
      gaugeSectors(color = "steelblue"))
 })
 ```
 
-### Economia estimada  {.no-mobile}
+### Economia anual estimada  
 
 ```{r, gauge_uf Economia estimada}
-renderGauge({
 
+# gauge é atualizado a cada alteração na reactive function gauge_uf()
+renderGauge({
 
 gauge(gauge_uf()$gasto, min = 0, max = sum(map_uf()$total, na.rm = TRUE),
      gaugeSectors(color = "steelblue"))
@@ -314,6 +347,9 @@ Column
 ### Mapa UF
     
 ```{r, mapa_uf}
+
+# gráfico é atualizado a cada alteração na reactive function map_uf()
+
 leafletOutput("mapa_uf")
    
     output$mapa_uf <- renderLeaflet({
@@ -337,9 +373,14 @@ leafletOutput("mapa_uf")
 ### Ranking municípios afetados
     
 ```{r, plot rank quantidade}
+
+# gráfico é atualizado quando alteramos valor do  input$corte_uf
+
+# www.shorturl.at/aAMTU The Zero Bug by John Mount "common data aggregation tools often can not “count to zero” from examples, and this causes problems."
+
 renderPlotly({
 
-        
+# criei duas dfs para resolver o Zero Bug, www.shorturl.at/aAMTU      
 value <- camaras %>%
         group_by(uf)%>%
         filter (populacao <=  input$corte_uf) %>% 
@@ -351,7 +392,7 @@ no_value<- camaras %>%
         
 
 value<- left_join(no_value, value, by = c("uf"))%>% mutate (quant2 = quantidade + quant)%>%
-  lollipop_chart(uf, quantidade, highlight = input$uf )
+        lollipop_chart(uf, quantidade, highlight = input$uf )
   
 ax <- list(
   title = "",
@@ -375,6 +416,9 @@ ggplotly(value)%>% layout(xaxis = ax, yaxis = list(title = "",  zeroline = FALSE
 
 ```{r, plot rank populacao}
 renderPlotly({
+# gráfico é atualizado quando alteramos valor do  input$corte_uf  
+# criei duas dfs para resolver o Zero Bug, www.shorturl.at/aAMTU      
+    
 value <- camaras %>%
         group_by(uf)%>%
         filter (populacao <=  input$corte_uf) %>% 
@@ -386,7 +430,7 @@ no_value<- camaras %>%
         
 
 value<- left_join(no_value, value, by = c("uf"))%>% mutate (populacao = populacao + quant)%>%
-  lollipop_chart(uf, populacao, highlight = input$uf )
+        lollipop_chart(uf, populacao, highlight = input$uf )
 
 ax <- list(
   title = "",
@@ -404,12 +448,14 @@ ggplotly(value)%>% layout(xaxis = ax, yaxis = list(title = "",  zeroline = FALSE
   
 
 
-### Ranking economia estimada
+### Ranking economia anual estimada
     
 ```{r, rank plot Economia estimada}
 
 renderPlotly({
-    
+  
+# gráfico é atualizado quando alteramos valor do input$corte_uf, input$adm_uf, input$legis_uf e input$demais_uf
+# criei duas dfs para resolver o Zero Bug, www.shorturl.at/aAMTU        
 value <- camaras %>%
         group_by(uf)%>%
         filter (populacao <=  input$corte_uf) %>% 
@@ -420,7 +466,8 @@ no_value<- camaras %>%
         summarise(eco = 0)
 
 value<- left_join(no_value, value, by = c("uf"))%>% mutate (eco2 = economia + eco)%>%
-  lollipop_chart(uf, economia, highlight = input$uf )
+        lollipop_chart(uf, economia, highlight = input$uf )
+
 ax <- list(
   title = "",
   zeroline = FALSE,
@@ -450,24 +497,22 @@ Inputs {.sidebar}
 -------------------------------------
 ```{r, input e reactive municipio}
 
+# atenção, variáveis terminam com "muni"
+
+
+# selecionar município, padrão município-uf-código MicroRegion
 selectInput("filtro", label = "Município-UF:", 
                         choices = camaras$filtro, 
                         selected = "Florianópolis-SC-42016")
 
 
-
- micro<- reactive({as.numeric(str_sub((input$filtro),-5))})
+# extrarir o código da MicroRegion
+micro<- reactive({as.numeric(str_sub((input$filtro),-5))})
+ 
+# utilizar micro() para criar mapa dos municípios pertencentes a deteriminada MicroRegion 
+map_muni <- reactive({ map_cidades%>% filter (MicroRegion == micro()) })
  
  
-   map_muni <- reactive({ map_cidades%>% filter (MicroRegion == micro()) })
- 
-   gauge_muni<- reactive( {as.data.frame(map_muni()%>% filter (MicroRegion == micro())%>% group_by (MicroRegion) %>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum(adm+legis, na.rm = TRUE)))})
-
-   
-map_pop_muni<-reactive ({map_cidades %>% filter (MicroRegion == micro() )%>% group_by(MicroRegion)%>%summarise(populacao = sum (populacao))%>%arrange(populacao)})      
-
-
-    
     
 ```
 
@@ -478,7 +523,7 @@ map_pop_muni<-reactive ({map_cidades %>% filter (MicroRegion == micro() )%>% gro
 Column
 -----------------------------------------------------------------------
 
-### Mapa Microrregião
+### Mapa Microrregião (em vermelho municípios com população inferior a 5.000 habitantes)
     
 ```{r, mapa municipio}
 leafletOutput("map_muni")
@@ -491,8 +536,7 @@ icons <-awesomeIcons(
   icon = 'ios-close',
   iconColor = 'black',
   library = 'ion',
-  markerColor = "red"
-)
+  markerColor = "red")
       
        map_muni<- leaflet()%>%
             addTiles(group = "OSM (default)") %>% 
@@ -504,27 +548,25 @@ icons <-awesomeIcons(
                 data = map_muni()%>%filter(MicroRegion == micro(), populacao>5000),
                 fill = T, weight = 2, color = "blue", group = "demais municípios (azul)",
                 label = ~paste0(nome,": ", populacao) ) %>% 
-         # addMarkers(data = map_muni()%>%filter(populacao<5000),lng = ~lng, lat = ~lat, group = "municípios afetados", icon = icons) %>% 
-        #  addMarkers(data = map_muni(),lng = ~lng, lat = ~lat, group = "todos municípios") %>% 
-         addLayersControl(
-    overlayGroups = c("municípios afetados (vermelho)", "demais municípios (azul)"),
-    options = layersControlOptions(collapsed = FALSE)
-  )
+             addLayersControl(overlayGroups = c("municípios afetados (vermelho)", "demais municípios (azul)"),
+                              options = layersControlOptions(collapsed = FALSE) )
        
-        
         (map_muni)
        
-   
     })
 
 ```
 
-### Dados
+### Dados: dotação atualizada (RREO 4° bimestre 2019)
     
 ```{r, tabela municipio}
-DTOutput("tabela4")
+#opção para baixar todos os dados: dica de Cristian E. Nuno
+#https://github.com/rstudio/DT/issues/267#issuecomment-347030730
+#https://github.com/cenuno/shiny/tree/master/DT-Download-All-Rows-Button#customizing-dt-download-button
+
+DTOutput("municipios")
    
- output$tabela4 <- renderDT({
+ output$municipios <- renderDT({
       
      tabela<- as.data.frame(map_muni()%>% select (ente, populacao, total))
 
@@ -537,30 +579,21 @@ DTOutput("tabela4")
                     list("copy", list(
                       extend = "collection"
                       , buttons = c("csv", "excel", "pdf")
-                      , text = "Download"
-                    ) ) # end of buttons customization
-                   
-                   # customize the length menu
-                  , lengthMenu = list( c(-1, 20, 50) # declare values
-                                       , c( "tudo",20, 50) # declare titles
-                  ) # end of lengthMenu customization
-                  , pageLength = 10
-                   
-                   
-                ) # end of options
-               
-     )%>% formatCurrency("total", 
-                          "R$",
+                      , text = "Download" ) ),
+                  lengthMenu = list( c(-1, 20, 50),
+                                     c( "tudo",20, 50)),
+                  pageLength = 15 ))%>%
+        
+          formatCurrency("total", 
+                          "R$ ",
                           mark = ".",
                           dec.mark = ",") %>% 
-     formatRound(
-  "populacao",
-  digits = 0,
-  interval = 3,
-  mark = ".",
-  dec.mark = ","
-) # end of datatables
- })
+          formatRound("populacao",
+                      digits = 0,
+                      interval = 3,
+                      mark = ".",
+                      dec.mark = ","
+)})
 
 ```
 
@@ -572,61 +605,57 @@ Dados
 
 Column 
 -----------------------------------------------------------------------
-### Dados
+### Dados: dotação atualizada por função (RREO 4° bimestre 2019)
     
 ```{r, tabela dados}
+#opção para baixar todos os dados: dica de Cristian E. Nuno
+#https://github.com/rstudio/DT/issues/267#issuecomment-347030730
+#https://github.com/cenuno/shiny/tree/master/DT-Download-All-Rows-Button#customizing-dt-download-button
 
-#https://github.com/rstudio/DT/issues/267
-# https://github.com/cenuno
-
-DTOutput("tabela2")
+DTOutput("dados")
    
- output$tabela2 <- renderDT({
+ output$dados <- renderDT({
       
-      
-
-      
-      datatable(as.data.frame(camaras%>% select (ente, uf, populacao, total)),
-      extensions = 'Buttons'
-                , options = list( 
-                  dom = "Blfrtip"
-                  , buttons = 
-                    list("copy", list(
-                      extend = "collection"
-                      , buttons = c("csv", "excel", "pdf")
-                      , text = "Download"
-                    ) ) # end of buttons customization
-                   
-                   # customize the length menu
-                  , lengthMenu = list( c(-1, 20, 50) # declare values
-                                       , c( "tudo",20, 50) # declare titles
-                  ) # end of lengthMenu customization
-                  , pageLength = 10
-                   
-                   
-                ) # end of options
-               
-     ) %>% formatCurrency("total", 
-                          "R$",
-                          mark = ".",
-                          dec.mark = ",") %>% 
-     formatRound(
-  "populacao",
-  digits = 0,
-  interval = 3,
-  mark = ".",
-  dec.mark = ","
-)# end of datatables
+      datatable(as.data.frame(camaras%>% select (ente, uf, populacao, legis, adm, demais, total)),
+      extensions = 'Buttons',
+      options = list(dom = "Blfrtip",
+                     buttons = list(
+                      "copy", list(
+                      extend = "collection",
+                      buttons = c("csv", "excel", "pdf"),
+                      text = "Download") ) ,
+                      lengthMenu = list( c(-1, 20, 50),
+                                         c( "tudo",20, 50) ),
+                     pageLength = 15))%>%
+     formatCurrency("legis", 
+                    "R$ ",
+                    mark = ".",
+                    dec.mark = ",")%>%
+     formatCurrency("adm", 
+                    "R$ ",
+                    mark = ".",
+                    dec.mark = ",")%>%
+     formatCurrency("demais", 
+                    "R$ ",
+                    mark = ".",
+                    dec.mark = ",") %>% 
+     formatCurrency("total", 
+                    "R$ ",
+                    mark = ".",
+                    dec.mark = ",") %>% 
+     formatRound("populacao",
+                  digits = 0,
+                  interval = 3,
+                  mark = ".",
+                  dec.mark = ",")
    
    })
 
 ```
 
-Vídeo Explicativo
-=====================================
 
 
 ```{r}
-embed_url("https://www.youtube.com/watch?v=uV4UpCq2azs")
+camaras%>% filter(legis== 0, cores =="red")%>%group_by(uf) %>% summarise(q = n())
 ```
 
