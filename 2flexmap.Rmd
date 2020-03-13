@@ -30,6 +30,7 @@ library(htmltools)
 ```
 
 ```{r, ggcharts}
+
 # https://github.com/thomas-neitmann/ggcharts
 #if (!"remotes" %in% installed.packages()) {
 #  install.packages("remotes")
@@ -85,9 +86,11 @@ Inputs {.sidebar}
 # atenção, variáveis terminam com "br"
 
 # slider para linha de corte_br
+# slider to inform the population cut-off point. The  legal proposition aims to extinguish brazilian municipalities with population under 5.000 inhabitants
+# populacao (Portuguese) = population (English)
    noUiSliderInput(
     inputId = "corte_br",
-    label = "extinguir municípios com população menor que:",
+    label = "extinguir municípios com população menor que (population cut-off point):",
     min = 1000, max = 10000,
     value = 5000,
     step = 1000,
@@ -95,27 +98,33 @@ Inputs {.sidebar}
 
 
 # slider ecomomia despesa legislativa
+# slider to inform the expected % decrease of expenses related to the legislative branch (resulting from the extinguishment of municipalities)
+# despesa legislativa = related to legislative branch
    noUiSliderInput(
     inputId = "legis_br",
-    label = "% de economia com a redução da despesa legislativa:",
+    label = "% de economia com a redução da despesa legislativa (expected % decrease of expenses related to the legislative branch):",
     min = 0, max = 100,
     value = 95,
     step = 5,
     format = wNumbFormat(thousand = "."))
    
 # slider ecomomia despesa administrativa
+# slider to inform the expected % decrease of administrative expenses (resulting from the extinguishment of municipalities)  
+# despesa administrativa =  administrative expenses  
    noUiSliderInput(
     inputId = "adm_br",
-    label = "% de economia com a redução da despesa administrativa:",
+    label = "% de economia com a redução da despesa administrativa (expected % decrease of administrative expenses):",
     min = 0, max = 100,
     value = 70,
     step = 5,
     format = wNumbFormat(thousand = "."))   
  
    # slider ecomomia demais despesas
+   # slider to inform the expected % decrease of other expenses (resulting from the extinguishment of municipalities)
+   # demais despesas = other expenses
   noUiSliderInput(
     inputId = "demais_br",
-    label = "% de economia com a redução das demais despesas:",
+    label = "% de economia com a redução das demais despesas (expected % decrease of other expenses):",
     min = 0, max = 100,
     value = 15,
     step = 5,
@@ -125,9 +134,11 @@ Inputs {.sidebar}
   
   
 # map_br é atualizado a cada mudança no input$corte_br (slider população)
+# map_br() is updated whenever input$corte_br (slider) is updated
   map_br <- reactive({ map_cidades%>% mutate (corte_br = if_else(populacao >  input$corte_br , "ok", "mescla"))})
   
 # gauge_br é atualizado a cada mudança no input$corte_br (slider população) e nos inputs de despesa (input$adm_br, # input$legis_br,input$demais_br)
+# gauge_br() is updated whenever input$corte_br, input$adm_br, input$legis_br and input$demais_br are updated
   gauge_br<- reactive({as.data.frame(map_br()%>% filter (populacao <=  input$corte_br)%>% summarise(pop = sum(populacao), quantidade = n(), gasto = sum((adm*input$adm_br/100)+(legis*input$legis_br/100)+(demais*input$demais_br/100), na.rm = TRUE)))})
 
 
@@ -138,11 +149,12 @@ Inputs {.sidebar}
 
 Row 
 -----------------------------------------------------------------------
-### Municípios afetados 
+### Municípios afetados (municipalities extinguished)
 
 ```{r, gauge_br quantidade}
 
 # gauge é atualizado a cada alteração na reactive function map_br() e gauge_br()
+# guage is updated whenever reactive functions map_br() and gauge_br() are updated
 
 renderGauge({
 gauge(gauge_br()$quantidade, min = 0, max = nrow(map_br()),
@@ -150,12 +162,12 @@ gauge(gauge_br()$quantidade, min = 0, max = nrow(map_br()),
 })
 ```
 
-### População afetada 
+### População afetada (population affected)
 
 ```{r,gauge_br populacao}
 
 # gauge é atualizado a cada alteração na reactive function map_br() e gauge_br()
-
+# guage is updated whenever reactive functions map_br() and gauge_br() are updated
 renderGauge({
 gauge(gauge_br()$pop, min = 0, max = sum(map_br()$populacao),
      gaugeSectors(color = "steelblue"))
@@ -163,11 +175,12 @@ gauge(gauge_br()$pop, min = 0, max = sum(map_br()$populacao),
 ```
 
 
-### Economia anual estimada 
+### Economia anual estimada (annual estimated economy)  
 
 ```{r, gauge_br Economia estimada}
 
 # gauge é atualizado a cada alteração na reactive function map_br() e gauge_br()
+# guage is updated whenever reactive functions map_br() and gauge_br() are updated
 renderGauge({
 gauge(gauge_br()$gasto, min = 0, max = sum(map_br()$total, na.rm = TRUE),
       gaugeSectors(color = "steelblue"))
@@ -184,7 +197,7 @@ Row
 ```{r, cluster BR}
 
 # gráfico é atualizado a cada alteração na reactive function map_br()
-
+# plot is updated whenever function map_br() is updated
    leafletOutput("cluster_br")
     output$cluster_br <- renderLeaflet({
       
@@ -206,7 +219,7 @@ Row
 ```{r, mapa BR}
  
 # gráfico é atualizado a cada alteração na reactive function map_br()
-
+# plot is updated whenever function map_br() is updated
    leafletOutput("mapa_br")
    
     output$mapa_br <- renderLeaflet({
@@ -307,7 +320,7 @@ output$afetados<-renderText({
 })
 ```
 
-### Municípios afetados 
+### Municípios afetados (municipalities extinguished)
 
 ```{r, gauge_uf quantidade}
 # gauge é atualizado a cada alteração na reactive function map_uf() e gauge_uf()
@@ -318,7 +331,7 @@ gauge(nrow(map_uf()%>%filter(corte == "mescla")), min = 0, max = nrow(map_uf()),
 })
 ```
 
-### População afetada
+### População afetada (population affected)
 
 ```{r, gauge_uf populacao}
 
@@ -329,7 +342,7 @@ gauge(gauge_uf()$pop, min = 0, max = sum(map_uf()$populacao),
 })
 ```
 
-### Economia anual estimada  
+### Economia anual estimada (annual estimated economy)  
 
 ```{r, gauge_uf Economia estimada}
 
