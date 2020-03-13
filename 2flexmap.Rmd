@@ -30,6 +30,7 @@ library(htmltools)
 ```
 
 ```{r, ggcharts}
+# https://github.com/thomas-neitmann/ggcharts
 #if (!"remotes" %in% installed.packages()) {
 #  install.packages("remotes")
 #}
@@ -52,6 +53,7 @@ gastos<-read_csv("gastos.csv")%>%select(-populacao, -uf )
 
 # juntar os dados das câmaras e dos entes
 camaras<- left_join(camaras, gastos, by = "cod_ibge" ) 
+
 
 
 # baixar o mapa com dados das cidades
